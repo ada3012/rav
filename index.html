@@ -19,11 +19,11 @@
   </header>
 
   <!-- 
-    IMPORTANTE: reemplaza TU_ID_DE_FORMSPREE por el endpoint real 
-    que te da https://formspree.io después de crear tu formulario gratis.
-    Ejemplo: https://formspree.io/f/abcd1234
+    IMPORTANTE - dos cosas que reemplazar:
+    1) TU_ID_DE_FORMSPREE -> el endpoint que te da https://formspree.io (ej. https://formspree.io/f/abcd1234)
+    2) TU_API_KEY_IMGBB -> tu clave gratis de https://api.imgbb.com/ (para subir la imagen y obtener un link)
   -->
-  <form id="mailForm" action="https://formspree.io/f/xzdljqwj" method="POST" enctype="multipart/form-data">
+  <form id="mailForm" action="https://formspree.io/f/TU_ID_DE_FORMSPREE" method="POST">
     <div class="field">
       <label for="message">Mensaje</label>
       <textarea id="message" name="message" placeholder="Escribe aquí lo que quieres enviar..." required></textarea>
@@ -32,23 +32,26 @@
     <div class="field">
       <label for="image">Imagen</label>
       <div class="drop" id="dropZone">
-        <input type="file" id="image" name="attachment" accept="image/*">
+        <input type="file" id="image" accept="image/*">
         <div class="drop-text" id="dropText">Arrastra una imagen aquí o <b>haz clic para elegir</b></div>
       </div>
       <div class="preview" id="preview">
         <img id="previewImg" alt="Vista previa">
         <div class="fname" id="fileName"></div>
       </div>
+      <input type="hidden" id="imageUrl" name="image_url">
     </div>
 
     <button type="submit" id="submitBtn">Enviar mensaje</button>
     <div class="status" id="status"></div>
   </form>
 
-  <footer>Este mensaje se enviará directamente a tu correo</footer>
+  <footer>Este mensaje (y el link de la imagen) se enviará directamente a tu correo</footer>
 </div>
 
 <script>
+  const IMGBB_API_KEY = 'TU_API_KEY_IMGBB'; // consíguela gratis en https://api.imgbb.com/
+
   const form = document.getElementById('mailForm');
   const dropZone = document.getElementById('dropZone');
   const fileInput = document.getElementById('image');
@@ -58,9 +61,12 @@
   const dropText = document.getElementById('dropText');
   const status = document.getElementById('status');
   const submitBtn = document.getElementById('submitBtn');
+  const imageUrlField = document.getElementById('imageUrl');
+  let selectedFile = null;
 
   function showPreview(file){
     if(!file) return;
+    selectedFile = file;
     const reader = new FileReader();
     reader.onload = e => {
       previewImg.src = e.target.result;
@@ -82,10 +88,22 @@
   dropZone.addEventListener('drop', e => {
     const file = e.dataTransfer.files[0];
     if(file){
-      fileInput.files = e.dataTransfer.files;
       showPreview(file);
     }
   });
+
+  async function uploadToImgBB(file){
+    const data = new FormData();
+    data.append('image', file);
+    const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+      method: 'POST',
+      body: data
+    });
+    if(!res.ok) throw new Error('No se pudo subir la imagen');
+    const json = await res.json();
+    if(!json.success) throw new Error('ImgBB rechazó la imagen');
+    return json.data.url;
+  }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -97,11 +115,24 @@
       status.textContent = 'Falta configurar el endpoint de Formspree (ver instrucciones).';
       return;
     }
+    if(selectedFile && IMGBB_API_KEY === 'TU_API_KEY_IMGBB'){
+      status.className = 'status err';
+      status.textContent = 'Falta configurar la API key de ImgBB (ver instrucciones).';
+      return;
+    }
 
     submitBtn.disabled = true;
     submitBtn.textContent = 'Enviando...';
 
     try{
+      if(selectedFile){
+        status.className = 'status';
+        status.textContent = 'Subiendo imagen...';
+        const url = await uploadToImgBB(selectedFile);
+        imageUrlField.value = url;
+      }
+
+      status.textContent = 'Enviando mensaje...';
       const data = new FormData(form);
       const res = await fetch(form.action, {
         method: 'POST',
@@ -114,6 +145,7 @@
         status.textContent = '✓ Mensaje enviado correctamente.';
         form.reset();
         preview.style.display = 'none';
+        selectedFile = null;
         dropText.innerHTML = 'Arrastra una imagen aquí o <b>haz clic para elegir</b>';
       } else {
         status.className = 'status err';
@@ -121,7 +153,7 @@
       }
     } catch(err){
       status.className = 'status err';
-      status.textContent = 'Error de conexión. Intenta de nuevo.';
+      status.textContent = 'Error: ' + err.message;
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Enviar mensaje';
