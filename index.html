@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Enviar mensaje</title>
+<link rel="stylesheet" href="./css/index.css">
+</head>
+<body>
+
+<div class="envelope">
+  <div class="airmail-stripe"></div>
+  <header>
+    <div class="title-block">
+      <h1>Enviar por correo</h1>
+      <p>Texto + imagen &rarr; tu bandeja de entrada</p>
+    </div>
+    <div class="stamp">POR<br>AVIÓN</div>
+  </header>
+
+  <!-- 
+    IMPORTANTE: reemplaza TU_ID_DE_FORMSPREE por el endpoint real 
+    que te da https://formspree.io después de crear tu formulario gratis.
+    Ejemplo: https://formspree.io/f/abcd1234
+  -->
+  <form id="mailForm" action="https://formspree.io/f/xzdljqwj" method="POST" enctype="multipart/form-data">
+    <div class="field">
+      <label for="message">Mensaje</label>
+      <textarea id="message" name="message" placeholder="Escribe aquí lo que quieres enviar..." required></textarea>
+    </div>
+
+    <div class="field">
+      <label for="image">Imagen</label>
+      <div class="drop" id="dropZone">
+        <input type="file" id="image" name="attachment" accept="image/*">
+        <div class="drop-text" id="dropText">Arrastra una imagen aquí o <b>haz clic para elegir</b></div>
+      </div>
+      <div class="preview" id="preview">
+        <img id="previewImg" alt="Vista previa">
+        <div class="fname" id="fileName"></div>
+      </div>
+    </div>
+
+    <button type="submit" id="submitBtn">Enviar mensaje</button>
+    <div class="status" id="status"></div>
+  </form>
+
+  <footer>Este mensaje se enviará directamente a tu correo</footer>
+</div>
+
+<script>
+  const form = document.getElementById('mailForm');
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('image');
+  const preview = document.getElementById('preview');
+  const previewImg = document.getElementById('previewImg');
+  const fileName = document.getElementById('fileName');
+  const dropText = document.getElementById('dropText');
+  const status = document.getElementById('status');
+  const submitBtn = document.getElementById('submitBtn');
+
+  function showPreview(file){
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      previewImg.src = e.target.result;
+      fileName.textContent = file.name;
+      preview.style.display = 'block';
+      dropText.innerHTML = 'Imagen lista &mdash; <b>haz clic para cambiarla</b>';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  fileInput.addEventListener('change', () => showPreview(fileInput.files[0]));
+
+  ['dragenter','dragover'].forEach(evt =>
+    dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.add('drag'); })
+  );
+  ['dragleave','drop'].forEach(evt =>
+    dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.remove('drag'); })
+  );
+  dropZone.addEventListener('drop', e => {
+    const file = e.dataTransfer.files[0];
+    if(file){
+      fileInput.files = e.dataTransfer.files;
+      showPreview(file);
+    }
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    status.className = 'status';
+    status.textContent = '';
+
+    if(form.action.includes('TU_ID_DE_FORMSPREE')){
+      status.className = 'status err';
+      status.textContent = 'Falta configurar el endpoint de Formspree (ver instrucciones).';
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Enviando...';
+
+    try{
+      const data = new FormData(form);
+      const res = await fetch(form.action, {
+        method: 'POST',
+        body: data,
+        headers: { 'Accept': 'application/json' }
+      });
+
+      if(res.ok){
+        status.className = 'status ok';
+        status.textContent = '✓ Mensaje enviado correctamente.';
+        form.reset();
+        preview.style.display = 'none';
+        dropText.innerHTML = 'Arrastra una imagen aquí o <b>haz clic para elegir</b>';
+      } else {
+        status.className = 'status err';
+        status.textContent = 'No se pudo enviar. Intenta de nuevo.';
+      }
+    } catch(err){
+      status.className = 'status err';
+      status.textContent = 'Error de conexión. Intenta de nuevo.';
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Enviar mensaje';
+    }
+  });
+</script>
+
+</body>
+</html>
