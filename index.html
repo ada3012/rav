@@ -13,11 +13,9 @@
   <header>
     <div class="title-block">
       <h1>Envia un mensaje con todo tu heart</h1>
-      <p>Texto + imagen &rarr;</p>
     </div>
     <div class="stamp">POR<br>AVIÓN</div>
   </header>
-
   <form id="mailForm" action="https://formspree.io/f/mlgypybg" method="POST">
     <div class="field">
       <label for="message">Mensaje</label>
@@ -41,6 +39,7 @@
     <div class="status" id="status"></div>
   </form>
 
+  <footer>Se genera una carta con tu texto e imagen y se envía como una sola foto</footer>
 </div>
 
 <script>
@@ -86,17 +85,180 @@
     }
   });
 
-  async function uploadToImgBB(file){
+  async function uploadToImgBB(blob){
     const data = new FormData();
-    data.append('image', file);
+    data.append('image', blob, 'carta.png');
     const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
       method: 'POST',
       body: data
     });
-    if(!res.ok) throw new Error('No se pudo subir la imagen');
+    if(!res.ok) throw new Error('No se pudo subir la carta');
     const json = await res.json();
     if(!json.success) throw new Error('ImgBB rechazó la imagen');
     return json.data.url;
+  }
+
+  function loadImageFromFile(file){
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
+  function wrapText(ctx, text, maxWidth){
+    const paragraphs = text.split('\n');
+    const lines = [];
+    paragraphs.forEach(p => {
+      if(p.trim() === ''){ lines.push(''); return; }
+      const words = p.split(' ');
+      let current = '';
+      words.forEach(word => {
+        const test = current ? current + ' ' + word : word;
+        if(ctx.measureText(test).width > maxWidth && current){
+          lines.push(current);
+          current = word;
+        } else {
+          current = test;
+        }
+      });
+      if(current) lines.push(current);
+    });
+    return lines;
+  }
+
+  function drawDashedLine(ctx, x1, y1, x2, y2){
+    ctx.save();
+    ctx.setLineDash([6,6]);
+    ctx.strokeStyle = '#c9bfa4';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawAirmailStripe(ctx, x, y, w, h){
+    const colors = ['#b4472e', '#fffdf7', '#3d5a80', '#fffdf7'];
+    const stripeWidth = 18;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+    let dx = x - h;
+    let i = 0;
+    while(dx < x + w + h){
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.save();
+      ctx.translate(dx, y);
+      ctx.rotate(Math.PI/4);
+      ctx.fillRect(0, -20, stripeWidth, h + 80);
+      ctx.restore();
+      dx += stripeWidth;
+      i++;
+    }
+    ctx.restore();
+  }
+
+  function drawStamp(ctx, x, y, w, h){
+    ctx.save();
+    ctx.fillStyle = '#3d5a80';
+    ctx.strokeStyle = '#1c2b3a';
+    ctx.lineWidth = 3;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = '#fffdf7';
+    ctx.font = "bold 15px Georgia, serif";
+    ctx.textAlign = 'center';
+    ctx.fillText('POR', x + w/2, y + h/2 - 6);
+    ctx.fillText('AVIÓN', x + w/2, y + h/2 + 16);
+    ctx.textAlign = 'left';
+    ctx.restore();
+  }
+
+  async function generateLetterImage(text, imageFile){
+    const width = 900;
+    const marginX = 60;
+    const contentWidth = width - marginX*2;
+    const bodyFont = "26px Georgia, 'Times New Roman', serif";
+
+    const measureCanvas = document.createElement('canvas');
+    const mctx = measureCanvas.getContext('2d');
+    mctx.font = bodyFont;
+    const lines = wrapText(mctx, text || '', contentWidth);
+    const lineHeight = 38;
+    const textBlockHeight = Math.max(lines.length, 1) * lineHeight;
+
+    let img = null, imgW = 0, imgH = 0;
+    if(imageFile){
+      img = await loadImageFromFile(imageFile);
+      const maxW = contentWidth;
+      const maxH = 480;
+      const ratio = Math.min(maxW/img.width, maxH/img.height, 1);
+      imgW = img.width * ratio;
+      imgH = img.height * ratio;
+    }
+
+    const headerHeight = 175;
+    const topPad = 35;
+    const gapAfterText = img ? 30 : 0;
+    const footerHeight = 60;
+    const bottomPad = 40;
+
+    const height = headerHeight + topPad + textBlockHeight + gapAfterText + imgH + footerHeight + bottomPad;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#fffdf7';
+    ctx.fillRect(0, 0, width, height);
+
+    drawAirmailStripe(ctx, 10, 10, width - 20, 12);
+
+    ctx.strokeStyle = '#1c2b3a';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(6, 6, width - 12, height - 12);
+
+    ctx.fillStyle = '#1c2b3a';
+    ctx.font = "bold 44px Georgia, serif";
+    ctx.fillText('Carta', marginX, 100);
+
+    ctx.font = "14px Georgia, serif";
+    ctx.fillStyle = '#3d5a80';
+    ctx.fillText('MENSAJE ENVIADO POR CORREO', marginX, 128);
+
+    drawStamp(ctx, width - 130, 40, 74, 90);
+    drawDashedLine(ctx, marginX, headerHeight - 15, width - marginX, headerHeight - 15);
+
+    ctx.font = bodyFont;
+    ctx.fillStyle = '#1c2b3a';
+    let y = headerHeight + topPad + 22;
+    lines.forEach(line => {
+      ctx.fillText(line, marginX, y);
+      y += lineHeight;
+    });
+
+    if(img){
+      const imgY = headerHeight + topPad + textBlockHeight + gapAfterText;
+      const imgX = marginX + (contentWidth - imgW)/2;
+      ctx.drawImage(img, imgX, imgY, imgW, imgH);
+      ctx.strokeStyle = '#1c2b3a';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(imgX, imgY, imgW, imgH);
+    }
+
+    const footY = height - bottomPad - 15;
+    drawDashedLine(ctx, marginX, footY - 28, width - marginX, footY - 28);
+    ctx.font = "13px Georgia, serif";
+    ctx.fillStyle = '#9a917a';
+    const dateStr = new Date().toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
+    ctx.fillText('Enviado el ' + dateStr, marginX, footY);
+
+    return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
   }
 
   form.addEventListener('submit', async (e) => {
@@ -109,24 +271,31 @@
       status.textContent = 'Falta configurar el endpoint de Formspree (ver instrucciones).';
       return;
     }
-    if(selectedFile && IMGBB_API_KEY === 'TU_API_KEY_IMGBB'){
+    if(IMGBB_API_KEY === 'TU_API_KEY_IMGBB'){
       status.className = 'status err';
       status.textContent = 'Falta configurar la API key de ImgBB (ver instrucciones).';
       return;
     }
 
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Enviando...';
+    submitBtn.textContent = 'Generando carta...';
 
     try{
-      if(selectedFile){
-        status.className = 'status';
-        status.textContent = 'Subiendo imagen...';
-        const url = await uploadToImgBB(selectedFile);
-        imageUrlField.value = url;
-      }
+      const messageText = document.getElementById('message').value;
+      const letterBlob = await generateLetterImage(messageText, selectedFile);
 
-      status.textContent = 'Enviando mensaje...';
+      // Mostrar la carta generada como vista previa
+      previewImg.src = URL.createObjectURL(letterBlob);
+      fileName.textContent = 'carta.png';
+      preview.style.display = 'block';
+
+      submitBtn.textContent = 'Subiendo carta...';
+      status.textContent = 'Subiendo carta...';
+      const url = await uploadToImgBB(letterBlob);
+      imageUrlField.value = url;
+
+      submitBtn.textContent = 'Enviando...';
+      status.textContent = 'Enviando correo...';
       const data = new FormData(form);
       const res = await fetch(form.action, {
         method: 'POST',
@@ -136,9 +305,8 @@
 
       if(res.ok){
         status.className = 'status ok';
-        status.textContent = '✓ Mensaje enviado correctamente.';
+        status.textContent = '✓ Carta enviada correctamente.';
         form.reset();
-        preview.style.display = 'none';
         selectedFile = null;
         dropText.innerHTML = 'Arrastra una imagen aquí o <b>haz clic para elegir</b>';
       } else {
